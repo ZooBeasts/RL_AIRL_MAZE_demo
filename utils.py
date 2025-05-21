@@ -15,35 +15,8 @@ def plot_trajectories(expert_states, agent_states):
     plt.title("Trajectory Comparison")
     plt.show()
 
-
-# def save_expert(env, path=None, expert_actions=None):
-#     all_states, all_actions = [], []
-#     max_len = max(len(states) for states in all_states)
-#
-#     # Pad states (assuming they are 2D arrays)
-#     padded_states = [np.pad(states, ((0, max_len - len(states)), (0, 0)), mode='constant')
-#                      for states in all_states
-#                      ]
-#
-#     # Pad actions (assuming they are 1D arrays)
-#     padded_actions = [np.pad(actions, (0, max_len - len(actions)), mode='constant')
-#                       for actions in all_actions]
-#     for expert_actions in expert_actions:
-#         obs, _ = env.reset()
-#         states, actions = [], []
-#         for a in expert_actions:
-#             states.append(obs)
-#             actions.append(a)
-#             obs, r, term, trunc, _ = env.step(a)
-#             if term or trunc:
-#                 break
-#
-#         all_states.append(np.array(states, dtype=np.float32))
-#         all_actions.append(np.array(actions, dtype=np.int32))
-#
-#     np.savez(path, states=np.array(padded_states), actions=np.array(padded_actions))
 def save_ppo_trajectories(env, best_path="ppo_best_traj.npz", all_success_path="all_successful_ppo.npz",
-                          n_trials=10000, model=None):
+                          n_trials=100, model=None):
     if model is None:
         from main import model
 
@@ -63,7 +36,12 @@ def save_ppo_trajectories(env, best_path="ppo_best_traj.npz", all_success_path="
     # Run all trials
     for i in range(n_trials):
         obs, _ = use_env.reset()
-        states, actions = [], []
+        states, actions, positions = [], [], []
+
+        # Store initial position
+        if hasattr(use_env, 'agent_pos'):
+            positions.append(list(use_env.agent_pos))
+
         total_return = 0.0
         done = False
         reached_exit = False
@@ -73,6 +51,11 @@ def save_ppo_trajectories(env, best_path="ppo_best_traj.npz", all_success_path="
             states.append(obs)
             actions.append(int(action))
             obs, r, term, trunc, _ = use_env.step(action)
+
+            # Store position after each step
+            if hasattr(use_env, 'agent_pos'):
+                positions.append(list(use_env.agent_pos))
+
             total_return += r
             done = term or trunc
             if r == 1.0:
@@ -81,13 +64,14 @@ def save_ppo_trajectories(env, best_path="ppo_best_traj.npz", all_success_path="
         # Check if this is the best trajectory (only consider first 10 trials)
         if i < 10 and total_return > best_return:
             best_return = total_return
-            best_pair = (states, actions)
+            best_pair = (states, actions, positions)
 
         # Save successful trajectories
         if reached_exit:
             successful_paths.append({
                 "states": np.array(states, dtype=np.float32),
-                "actions": np.array(actions, dtype=np.int32)
+                "actions": np.array(actions, dtype=np.int32),
+                "positions": np.array(positions)
             })
 
     if needs_cleanup:
@@ -95,10 +79,11 @@ def save_ppo_trajectories(env, best_path="ppo_best_traj.npz", all_success_path="
 
     # Save best trajectory
     if best_pair:
-        states, actions = best_pair
+        states, actions, positions = best_pair
         np.savez(best_path,
                  states=np.array(states, dtype=np.float32),
                  actions=np.array(actions, dtype=np.int32),
+                 positions=np.array(positions),
                  total_return=best_return)
         print(f"Best PPO trajectory (return={best_return:.2f}) saved to {best_path}")
 
